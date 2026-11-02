@@ -1,21 +1,21 @@
 # 01 — Proxmox VE Virtualization Lab
 
 **Category:** Server Administration / Virtualization  
-**Status:** Installation completed; nested KVM troubleshooting in progress
+**Status:** Proxmox installed; nested KVM verified in the temporary Windows test configuration
 
 ## 1. Project Overview
 
-This lab deploys Proxmox VE 9.2.2 as a guest virtual machine in Oracle VirtualBox on a Windows 11 laptop. The purpose is to practice hypervisor installation, management access, virtual networking, and virtualization troubleshooting.
+This lab deploys Proxmox VE 9.2.2 as a virtual machine in Oracle VirtualBox on a Windows 11 laptop. It demonstrates hypervisor installation, management access, virtual networking, and troubleshooting nested virtualization.
 
-> **Lab limitation:** Proxmox is running inside VirtualBox (nested virtualization). The current verification did not expose Intel VT-x to the Proxmox guest, so KVM acceleration is not yet available. This is recorded as an unresolved limitation rather than a successful KVM test.
+**Important environment note:** KVM was successfully verified after temporarily disabling the Windows hypervisor launch and restarting Windows. This changes the Windows virtualization-security configuration. KVM must be retested after Windows protections are restored; the successful result below applies to the temporary test configuration.
 
 ## 2. Objectives
 
 - Install Proxmox VE and access its web management interface.
-- Configure the management bridge and VirtualBox network adapters.
-- Inspect CPU virtualization flags and KVM device availability.
-- Diagnose nested virtualization constraints between Windows, VirtualBox, and Proxmox.
-- Continue with guest VM deployment after the KVM / resource constraints are resolved.
+- Configure VirtualBox NAT and host-only adapters.
+- Inspect Proxmox network bridges and node resources.
+- Enable and verify nested Intel VT-x / KVM passthrough.
+- Record troubleshooting steps and security trade-offs.
 
 ## 3. Lab Environment
 
@@ -35,15 +35,15 @@ This lab deploys Proxmox VE 9.2.2 as a guest virtual machine in Oracle VirtualBo
 
 ## 4. Network Design
 
-The first VirtualBox adapter uses NAT and port forwarding for management access. The second adapter is configured as a host-only interface for a future isolated lab network.
+The first VirtualBox adapter uses NAT with port forwarding for management access. The second adapter is configured as a host-only interface for a future isolated lab network.
 
-Inside Proxmox, the management interface is attached to bridge `vmbr0`. The second interface (`nic1`) is present but was not yet configured for lab traffic.
+Inside Proxmox, the management interface is attached to bridge `vmbr0`. The second interface (`nic1`) is present but is not yet configured for lab traffic.
 
-Management access was verified through the forwarded HTTPS port at:
+Management access was verified through the forwarded HTTPS port:
 
 `https://127.0.0.1:8006`
 
-The guest management address and host-only addressing are intentionally omitted from this public document. Add a sanitized topology diagram under `architecture/` when the lab network is finalized.
+The management IP is omitted from this public document. A sanitized topology diagram can be added under `architecture/` after the lab network is finalized.
 
 ## 5. Implementation Completed
 
@@ -55,6 +55,8 @@ The guest management address and host-only addressing are intentionally omitted 
 6. Removed the installation ISO after setup and booted from the virtual disk.
 7. Accessed the Proxmox web interface successfully.
 8. Inspected Linux network interfaces and the `vmbr0` bridge.
+9. Diagnosed Windows hypervisor / VBS interference with nested virtualization.
+10. Temporarily changed Windows hypervisor launch configuration, restarted Windows, and verified KVM from inside Proxmox.
 
 ## 6. Testing and Results
 
@@ -64,43 +66,78 @@ The guest management address and host-only addressing are intentionally omitted 
 | Kernel | `uname -r` / version output | `7.0.2-6-pve` |
 | Management UI | Browser via forwarded HTTPS port | Accessible |
 | Bridge configuration | `ip a`, `/etc/network/interfaces` | `vmbr0` up; connected to `nic0` |
-| CPU virtualization flag in Proxmox | `egrep -c '(vmx|svm)' /proc/cpuinfo` | `0` at the time of test |
-| KVM device | `ls -l /dev/kvm` | Not present at the time of test |
+| CPU virtualization flag | `egrep -c '(vmx|svm)' /proc/cpuinfo` | `4` |
+| KVM device | `ls -l /dev/kvm` | Device present: `/dev/kvm` |
+| KVM kernel modules | `lsmod | grep kvm` | `kvm_intel`, `kvm`, and `irqbypass` loaded |
+| Node status | `pvesh get /nodes/$(hostname)/status` | Node status returned successfully |
 
-## 7. Troubleshooting and Lessons Learned
+### KVM verification evidence
 
-### KVM acceleration unavailable inside Proxmox
-
-The Proxmox installer displayed a warning that hardware-accelerated KVM virtualization was not detected. After installation, the following checks confirmed that the guest did not receive the Intel virtualization flag and that the KVM device was absent:
+CPU virtualization flags:
 
 ```bash
 egrep -c '(vmx|svm)' /proc/cpuinfo
-ls -l /dev/kvm
+# Output: 4
 ```
 
-Observed output:
-- CPU virtualization flag count: `0`
-- `/dev/kvm`: No such file or directory
+KVM device:
 
-VirtualBox settings showed nested VT-x/AMD-V enabled, but that setting alone did not prove that VT-x was exposed to the Proxmox guest. Windows diagnostics also reported that a hypervisor was detected and that Virtualization-Based Security was running.
+```bash
+ls -l /dev/kvm
+# Output observed:
+# crw-rw---- 1 root kvm 10, 232 ... /dev/kvm
+```
 
-Further troubleshooting is in progress. No claim is made that KVM acceleration has been enabled.
+Loaded modules:
+
+```bash
+lsmod | grep kvm
+# kvm_intel
+# kvm
+# irqbypass
+```
+
+These results confirm that Intel VT-x was exposed to the Proxmox guest and the KVM device was available during the temporary Windows test configuration.
+
+## 7. Troubleshooting and Lessons Learned
+
+### Initial issue: KVM acceleration unavailable
+
+The Proxmox installer warned that hardware-accelerated KVM was not detected. Initial checks inside Proxmox showed:
+
+- `egrep -c '(vmx|svm)' /proc/cpuinfo` returned `0`.
+- `/dev/kvm` did not exist.
+- Windows diagnostics reported a running hypervisor / Virtualization-Based Security.
+
+### Diagnosis and resolution for the test
+
+1. Verified Intel virtualization support in firmware and nested VT-x/AMD-V in VirtualBox.
+2. Identified the Windows hypervisor / VBS configuration as a layer preventing nested virtualization passthrough in this setup.
+3. Temporarily ran the following command in an elevated Windows Command Prompt:
+
+   ```cmd
+   bcdedit /set hypervisorlaunchtype off
+   ```
+
+4. Restarted Windows and confirmed that VBS was no longer running for the test.
+5. Started the Proxmox VM and repeated the checks.
+6. Confirmed four virtualization flags, the `/dev/kvm` device, and loaded KVM modules.
 
 ### Key lesson
 
-Nested virtualization depends on the host CPU, firmware, host hypervisor, Windows virtualization security configuration, and VirtualBox passthrough support. Each layer must be verified independently.
+Nested virtualization requires every layer to cooperate: firmware virtualization, host OS hypervisor configuration, VirtualBox nested VT-x passthrough, and the guest hypervisor. A setting enabled in VirtualBox does not alone guarantee that KVM will be available inside Proxmox.
 
 ## 8. Current Status and Next Steps
 
 - [x] Proxmox VE installation
-- [x] Boot from virtual disk after installation
 - [x] Proxmox Web UI access
 - [x] Initial management bridge inspection
-- [x] Nested virtualization diagnostics captured
-- [ ] Resolve or document the KVM passthrough limitation
-- [ ] Verify `vmx` CPU flag and `/dev/kvm` if KVM becomes available
+- [x] Diagnose Windows hypervisor interference
+- [x] Verify Intel virtualization flags inside Proxmox
+- [x] Verify `/dev/kvm` and KVM kernel modules
+- [ ] Restore Windows virtualization security settings and retest KVM
 - [ ] Configure and test the host-only lab network
-- [ ] Deploy an Ubuntu Server guest (subject to KVM and host resource constraints)
+- [ ] Deploy an Ubuntu Server guest
 - [ ] Capture genuine screenshots and add a network diagram
 
 ## 9. Evidence
@@ -111,7 +148,7 @@ Place genuine, sanitized screenshots in `screenshots/`:
 - Proxmox web dashboard
 - Proxmox version and kernel output
 - `ip a` and bridge configuration
-- KVM diagnostic output showing the initial limitation
-- Follow-up KVM test results, if the issue is resolved
+- Terminal output showing `vmx` count, `/dev/kvm`, and loaded KVM modules
+- Windows security status after protections are restored and KVM retested
 
 Do not publish passwords, tokens, private keys, or sensitive network details.
