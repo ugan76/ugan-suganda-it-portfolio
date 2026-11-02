@@ -43,7 +43,7 @@ Management access was verified through the forwarded HTTPS port:
 
 `https://127.0.0.1:8006`
 
-The management IP is omitted from this public document. A sanitized topology diagram can be added under `architecture/` after the lab network is finalized.
+The management IP is omitted from this public document. The logical topology and adapter design are documented in [architecture/lab-architecture.md](architecture/lab-architecture.md).
 
 ## 5. Implementation Completed
 
@@ -138,7 +138,7 @@ Nested virtualization requires every layer to cooperate: firmware virtualization
 - [ ] Restore Windows virtualization security settings and retest KVM
 - [ ] Configure and test the host-only lab network
 - [ ] Deploy an Ubuntu Server guest
-- [ ] Capture genuine screenshots and add a network diagram
+- [x] Upload genuine screenshots to the repository\n- [x] Document the logical architecture and network adapters\n- [x] Record the test procedures and observed results
 
 ## 9. Evidence
 
