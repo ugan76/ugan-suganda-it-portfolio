@@ -1,7 +1,7 @@
 # 01 — Proxmox VE Virtualization Lab
 
 **Category:** Server Administration / Virtualization  
-**Status:** Proxmox installed; nested KVM verified in the temporary Windows test configuration
+**Status:** Proxmox installed; NAT and Host-only connectivity verified; KVM verified only in the temporary Windows test configuration
 
 ## 1. Project Overview
 
@@ -35,15 +35,11 @@ This lab deploys Proxmox VE 9.2.2 as a virtual machine in Oracle VirtualBox on a
 
 ## 4. Network Design
 
-The first VirtualBox adapter uses NAT with port forwarding for management access. The second adapter is configured as a host-only interface for a future isolated lab network.
+The first VirtualBox adapter uses NAT with port forwarding for management access. The second adapter is configured as a host-only interface for private host-to-Proxmox connectivity.
 
-Inside Proxmox, the management interface is attached to bridge `vmbr0`. The second interface (`nic1`) is present but is not yet configured for lab traffic.
+Inside Proxmox, `vmbr0` is connected to `nic0` for NAT. The second interface, `nic1`, is configured with `192.168.56.10/24`; the Windows Host-only adapter uses `192.168.56.1/24`. Bidirectional ICMP connectivity was verified. TCP access to ports 8006 (Proxmox Web UI) and 22 (SSH) was verified, and SSH login over Host-only succeeded.
 
-Management access was verified through the forwarded HTTPS port:
-
-`https://127.0.0.1:8006`
-
-The management IP is omitted from this public document. The logical topology and adapter design are documented in [architecture/lab-architecture.md](architecture/lab-architecture.md).
+NAT management access was also verified through `https://127.0.0.1:8006`. The management IP on the NAT segment is omitted from this public document. The logical topology and adapter design are documented in [architecture/lab-architecture.md](architecture/lab-architecture.md).
 
 ## 5. Implementation Completed
 
@@ -57,6 +53,10 @@ The management IP is omitted from this public document. The logical topology and
 8. Inspected Linux network interfaces and the `vmbr0` bridge.
 9. Diagnosed Windows hypervisor / VBS interference with nested virtualization.
 10. Temporarily changed Windows hypervisor launch configuration, restarted Windows, and verified KVM from inside Proxmox.
+11. Restored Windows virtualization security settings (hypervisor launch set to auto; VBS/HVCI and Memory Integrity running).
+12. Retested KVM with Windows protections active; KVM was not exposed in this configuration.
+13. Configured and tested Host-only networking, including bidirectional ping, TCP ports 8006/22, and SSH login.
+14. Inspected Proxmox storage status, block devices, and filesystem usage.
 
 ## 6. Testing and Results
 
@@ -70,6 +70,13 @@ The management IP is omitted from this public document. The logical topology and
 | KVM device | `ls -l /dev/kvm` | Device present: `/dev/kvm` |
 | KVM kernel modules | `lsmod | grep kvm` | `kvm_intel`, `kvm`, and `irqbypass` loaded |
 | Node status | `pvesh get /nodes/$(hostname)/status` | Node status returned successfully |
+| Host-only IP configuration | `ip -br addr` | Windows `192.168.56.1/24`; Proxmox `nic1` `192.168.56.10/24` | PASS |
+| Host-only bidirectional ping | `ping` from both endpoints | Both directions succeeded after allowing inbound ICMP on Windows Firewall | PASS |
+| Host-only TCP access | `Test-NetConnection` to ports 8006 and 22 | Both TCP ports reachable from Windows | PASS |
+| Host-only SSH login | `ssh root@192.168.56.10` | SSH login succeeded | PASS |
+| Storage status | `pvesm status` | `local` and `local-lvm` active | PASS |
+| Block devices | `lsblk` | 64 GB `/dev/sda`; Proxmox LVM volumes visible | PASS |
+| Filesystem usage | `df -h` | Root filesystem 27 GB total, 4.1 GB used, 21 GB available | PASS |
 
 ### KVM verification evidence
 
@@ -135,12 +142,26 @@ Nested virtualization requires every layer to cooperate: firmware virtualization
 - [x] Diagnose Windows hypervisor interference
 - [x] Verify Intel virtualization flags inside Proxmox
 - [x] Verify `/dev/kvm` and KVM kernel modules
-- [ ] Restore Windows virtualization security settings and retest KVM
-- [ ] Configure and test the host-only lab network
-- [ ] Deploy an Ubuntu Server guest
+- [x] Restore Windows virtualization security settings
+- [x] Retest KVM with Windows security active (not available in this configuration)
+- [x] Configure and test the host-only lab network and SSH access
+- [x] Inspect `local` / `local-lvm` storage and disk layout
+- [ ] Deploy an Ubuntu Server guest (requires KVM or a suitable alternative host)
 - [x] Upload genuine screenshots to the repository\n- [x] Document the logical architecture and network adapters\n- [x] Record the test procedures and observed results
 
-## 9. Evidence
+## 9. Storage Inspection
+
+The following checks were completed:
+
+```bash
+pvesm status
+lsblk
+df -h
+```
+
+Both `local` (directory) and `local-lvm` (LVM-thin) reported `active`. The 64 GB virtual disk `/dev/sda` was detected. The root filesystem was approximately 27 GB total, 4.1 GB used, and 21 GB available at the time of inspection. These are session snapshots, not fixed capacity guarantees.
+
+## 10. Evidence
 
 Place genuine, sanitized screenshots in `screenshots/`:
 
