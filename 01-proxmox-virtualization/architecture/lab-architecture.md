@@ -27,7 +27,7 @@ flowchart TB
 | Adapter | Attachment | Purpose | Status |
 |---|---|---|---|
 | Adapter 1 | NAT | Proxmox management access and port forwarding | Configured |
-| Adapter 2 | Host-only | Isolated host-to-lab connectivity | Configured; traffic testing pending |
+| Adapter 2 | Host-only | Private host-to-lab connectivity | Configured and tested; bidirectional ping, TCP 8006/22, and SSH login succeeded |
 
 ### NAT port forwarding
 
@@ -54,14 +54,27 @@ iface vmbr0 inet static
     bridge-stp off
     bridge-fd 0
 
-iface nic1 inet manual
+auto nic1
+iface nic1 inet static
+    address 192.168.56.10/24
 ```
 
 Replace the placeholders only in a private/local copy with the actual lab values. Do not publish credentials or sensitive network information.
 
+## Host-only addressing and validation
+
+| Endpoint | Interface | Address |
+|---|---|---|
+| Windows host | VirtualBox Host-Only Ethernet Adapter | `192.168.56.1/24` |
+| Proxmox | `nic1` | `192.168.56.10/24` |
+| Proxmox NAT bridge | `vmbr0` | `10.0.2.15/24` |
+
+Host-only tests passed in both ping directions. Windows also reached TCP ports 8006 and 22, and SSH login to `root@192.168.56.10` succeeded. Windows Defender Firewall initially blocked inbound ICMP; the test succeeded after allowing the required ICMPv4 Echo Request traffic. The firewall remains enabled.
+
 ## Architecture notes
 
-- The Proxmox management interface is reachable through the VirtualBox NAT port-forwarding rule.
-- The host-only adapter is reserved for a separate lab network; connectivity still needs to be tested.
+- The Proxmox management interface is reachable through the VirtualBox NAT port-forwarding rule and the Host-only address.
+- Host-only networking is configured and connectivity has been tested.
 - Guest VM deployment is planned and is not represented as completed.
-- Nested KVM was verified while the Windows hypervisor launch configuration was temporarily disabled. Retest after restoring Windows virtualization security settings.
+- Nested KVM was verified while the Windows hypervisor launch configuration was temporarily disabled (`hypervisorlaunchtype off`): four `vmx` flags, `/dev/kvm` present, and KVM modules loaded.
+- After Windows security protections were restored (`hypervisorlaunchtype auto`, VBS/HVCI running, Memory Integrity on), KVM was retested and was not exposed (`vmx/svm` count 0, no `/dev/kvm`, no KVM modules). Keep Windows protections enabled; use a suitable alternative host for routine KVM practice if needed.
